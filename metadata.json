@@ -1,0 +1,7 @@
+{
+  "name": "Ultimate Event Architect",
+  "description": "AI-powered logistics and hospitality expert for perfect group dining orders based on menu analysis and group profiles.",
+  "requestFramePermissions": [
+    "camera"
+  ]
+}
