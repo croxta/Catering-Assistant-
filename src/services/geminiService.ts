@@ -1,4 +1,4 @@
-import { GoogleGenAI, Type, ThinkingLevel } from "@google/genai";
+import { Type, ThinkingLevel } from "@google/genai";
 
 export interface GroupProfile {
   total: number;
@@ -16,6 +16,21 @@ export interface OrderRequest {
   specialInstructions?: string;
   menuData: string; // This will now be the extracted text from OCR
   groupProfile: GroupProfile;
+}
+
+export interface OrderItem {
+  name: string;
+  quantity: string;
+  category: 'Starter' | 'Main' | 'Dessert' | 'Side' | 'Other';
+  dietaryTags: string[];
+}
+
+export interface OrderSummary {
+  personaIntro: string;
+  eventInfo: string;
+  items: OrderItem[];
+  serverNotes: string;
+  rawText: string; // Keep the original text for copy-pasting
 }
 
 const SYSTEM_INSTRUCTION = `You are the "Ultimate Event Architect," a high-level logistics and hospitality expert. 
@@ -39,37 +54,60 @@ CONSTRAINTS:
 - WhatsApp Ready: The output must be a clean, text-based summary—no heavy tables or complex formatting.
 - Quantity Logic: Provide specific counts of dishes to order.
 
-OUTPUT STRUCTURE:
-*Persona Intro*
---- ORDER SUMMARY ---
-Event: [Type] | Total: [Count]
-STARTERS
-- [Qty] x [Dish Name] ([Dietary Tag])
-MAIN COURSE
-- [Qty] x [Dish Name] ([Dietary Tag])
-DESSERTS/SIDES
-- [Qty] x [Dish Name]
-Notes for the Server: [Specific instructions]`;
+OUTPUT FORMAT:
+You must return a JSON object with the following structure:
+{
+  "personaIntro": "A short, persona-driven introduction",
+  "eventInfo": "Event: [Type] | Total: [Count]",
+  "items": [
+    {
+      "name": "Dish Name",
+      "quantity": "Qty",
+      "category": "Starter | Main | Dessert | Side | Other",
+      "dietaryTags": ["Veg", "Non-Veg", "Jain", "Vegan"]
+    }
+  ],
+  "serverNotes": "Specific instructions for the server",
+  "rawText": "A clean, text-based summary of the order, formatted for WhatsApp (using bullet points and bold text)"
+}`;
+
+// Helper to call the Netlify proxy instead of direct SDK
+async function callGeminiProxy(payload: any) {
+  const response = await fetch('/.netlify/functions/gemini-proxy', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify(payload),
+  });
+
+  if (!response.ok) {
+    const error = await response.json();
+    throw new Error(error.error || "Failed to call Gemini proxy");
+  }
+
+  return await response.json();
+}
 
 export async function extractMenuText(images: string[]) {
-  const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY || '' });
-  
-  const contents: any[] = [
-    { text: "Extract all food items, categories (Starters, Mains, etc.), and descriptions from these menu images. Return only the structured text." }
+  const parts: any[] = [
+    { text: "Extract all food items, categories (Starters, Mains, etc.), and descriptions from these menu images. Return only the structured text. If you can identify the restaurant name or location, include it at the top." }
   ];
   
   images.forEach(image => {
-    contents.push({
+    const [header, data] = image.split(',');
+    const mimeType = header.match(/:(.*?);/)?.[1] || "image/jpeg";
+    parts.push({
       inlineData: {
-        mimeType: "image/jpeg",
-        data: image.split(',')[1]
+        mimeType,
+        data
       }
     });
   });
 
-  const response = await ai.models.generateContent({
+  const response = await callGeminiProxy({
     model: "gemini-3-flash-preview",
-    contents: { parts: contents.map(c => typeof c === 'string' ? { text: c } : c) },
+    contents: [{ role: 'user', parts }],
     config: {
       temperature: 0.1,
       thinkingConfig: { thinkingLevel: ThinkingLevel.LOW }
@@ -80,8 +118,6 @@ export async function extractMenuText(images: string[]) {
 }
 
 export async function generateOrder(request: OrderRequest) {
-  const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY || '' });
-  
   const eventDisplay = request.eventType === 'Custom' ? request.customEventName : request.eventType;
 
   const prompt = `
@@ -101,15 +137,51 @@ export async function generateOrder(request: OrderRequest) {
     Please provide the order summary for this ${eventDisplay} event, strictly following the special instructions if any.
   `;
 
-  const response = await ai.models.generateContent({
+  const response = await callGeminiProxy({
     model: "gemini-3-flash-preview",
-    contents: prompt,
+    contents: [{ role: 'user', parts: [{ text: prompt }] }],
     config: {
       systemInstruction: SYSTEM_INSTRUCTION,
       temperature: 0.7,
+      responseMimeType: "application/json",
+      responseSchema: {
+        type: Type.OBJECT,
+        properties: {
+          personaIntro: { type: Type.STRING },
+          eventInfo: { type: Type.STRING },
+          items: {
+            type: Type.ARRAY,
+            items: {
+              type: Type.OBJECT,
+              properties: {
+                name: { type: Type.STRING },
+                quantity: { type: Type.STRING },
+                category: { type: Type.STRING },
+                dietaryTags: { type: Type.ARRAY, items: { type: Type.STRING } }
+              },
+              required: ["name", "quantity", "category", "dietaryTags"]
+            }
+          },
+          serverNotes: { type: Type.STRING },
+          rawText: { type: Type.STRING }
+        },
+        required: ["personaIntro", "eventInfo", "items", "serverNotes", "rawText"]
+      },
       thinkingConfig: { thinkingLevel: ThinkingLevel.LOW }
     },
   });
 
-  return response.text;
+  try {
+    return JSON.parse(response.text || '{}') as OrderSummary;
+  } catch (e) {
+    console.error("Failed to parse JSON response", e);
+    // Fallback if JSON parsing fails
+    return {
+      personaIntro: "Architectural error in formatting.",
+      eventInfo: "",
+      items: [],
+      serverNotes: "",
+      rawText: response.text || "Failed to generate summary."
+    };
+  }
 }
