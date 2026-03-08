@@ -5,6 +5,11 @@ import cookieParser from "cookie-parser";
 import jwt from "jsonwebtoken";
 import fs from "fs";
 import path from "path";
+import { GoogleGenAI } from "@google/genai";
+import dotenv from "dotenv";
+
+// Load environment variables from .env file
+dotenv.config();
 
 const JWT_SECRET = process.env.JWT_SECRET || "event-architect-secret";
 const PORT = 3000;
@@ -41,6 +46,50 @@ async function startServer() {
   app.use(express.json({ limit: '50mb' }));
   app.use(cors());
   app.use(cookieParser());
+
+  // --- Netlify Function Proxy (Local Development) ---
+  app.post("/.netlify/functions/gemini-proxy", async (req, res) => {
+    try {
+      const { prompt, model, contents, config } = req.body;
+      
+      // Try to find a valid API key, ignoring placeholders
+      const keysToTry = [
+        process.env.GEMINI_API_KEY,
+        process.env.GOOGLE_API_KEY,
+        process.env.API_KEY
+      ];
+      
+      const apiKey = keysToTry.find(key => key && key !== "MY_GEMINI_API_KEY" && key.length > 10);
+      
+      if (!apiKey) {
+        console.error("No valid API key found in environment variables.");
+        return res.status(500).json({ 
+          error: "GEMINI_API_KEY not configured. Please set it in your environment or AI Studio secrets." 
+        });
+      }
+
+      const ai = new GoogleGenAI({ apiKey });
+      
+      if (prompt && !contents) {
+        const response = await ai.models.generateContent({
+          model: model || "gemini-1.5-flash",
+          contents: [{ role: 'user', parts: [{ text: prompt }] }]
+        });
+        return res.json({ reply: response.text });
+      }
+
+      const response = await ai.models.generateContent({
+        model: model || "gemini-3-flash-preview",
+        contents,
+        config
+      });
+
+      res.json(response);
+    } catch (error: any) {
+      console.error("Local Proxy Error:", error);
+      res.status(500).json({ error: error.message });
+    }
+  });
 
   // --- Auth Routes ---
   

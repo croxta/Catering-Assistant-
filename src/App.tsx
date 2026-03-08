@@ -360,23 +360,21 @@ export default function App() {
           <div className="w-16 h-16 bg-indigo-600 rounded-2xl flex items-center justify-center text-white mx-auto mb-6 shadow-lg shadow-indigo-200">
             <Zap className="w-8 h-8" />
           </div>
-          <h1 className="text-3xl font-serif font-bold mb-2">Welcome Back.</h1>
-          <p className="text-slate-500 mb-8">Sign in to start architecting your perfect events.</p>
+          <h1 className="text-3xl font-serif font-bold mb-2">Testing Mode.</h1>
+          <p className="text-slate-500 mb-8">Google/Apple login is temporarily disabled for Netlify deployment testing.</p>
           
           <div className="space-y-4">
             <button 
               onClick={() => login('himrock77@gmail.com', 'Admin User', 'https://picsum.photos/seed/admin/100')}
-              className="w-full flex items-center justify-center gap-3 px-6 py-4 border border-slate-200 rounded-xl hover:bg-slate-50 transition-all font-medium"
+              className="w-full flex items-center justify-center gap-3 px-6 py-4 bg-indigo-600 text-white rounded-xl hover:bg-indigo-700 transition-all font-bold shadow-lg shadow-indigo-200"
             >
-              <img src="https://www.google.com/favicon.ico" className="w-5 h-5" alt="Google" />
-              Continue with Google
+              Enter App (Admin Mode)
             </button>
             <button 
               onClick={() => login('user@example.com', 'Regular User', 'https://picsum.photos/seed/user/100')}
               className="w-full flex items-center justify-center gap-3 px-6 py-4 border border-slate-200 rounded-xl hover:bg-slate-50 transition-all font-medium"
             >
-              <img src="https://www.apple.com/favicon.ico" className="w-5 h-5" alt="Apple" />
-              Continue with Apple
+              Enter App (User Mode)
             </button>
           </div>
           
