@@ -1,4 +1,4 @@
-import { Type, ThinkingLevel } from "@google/genai";
+import { GoogleGenAI, Type, ThinkingLevel } from "@google/genai";
 
 export interface GroupProfile {
   total: number;
@@ -71,25 +71,9 @@ You must return a JSON object with the following structure:
   "rawText": "A clean, text-based summary of the order, formatted for WhatsApp (using bullet points and bold text)"
 }`;
 
-// Helper to call the Netlify proxy instead of direct SDK
-async function callGeminiProxy(payload: any) {
-  const response = await fetch('/.netlify/functions/gemini-proxy', {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-    },
-    body: JSON.stringify(payload),
-  });
-
-  if (!response.ok) {
-    const error = await response.json();
-    throw new Error(error.error || "Failed to call Gemini proxy");
-  }
-
-  return await response.json();
-}
-
 export async function extractMenuText(images: string[]) {
+  const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY || '' });
+  
   const parts: any[] = [
     { text: "Extract all food items, categories (Starters, Mains, etc.), and descriptions from these menu images. Return only the structured text. If you can identify the restaurant name or location, include it at the top." }
   ];
@@ -105,7 +89,7 @@ export async function extractMenuText(images: string[]) {
     });
   });
 
-  const response = await callGeminiProxy({
+  const response = await ai.models.generateContent({
     model: "gemini-3-flash-preview",
     contents: [{ role: 'user', parts }],
     config: {
@@ -118,6 +102,8 @@ export async function extractMenuText(images: string[]) {
 }
 
 export async function generateOrder(request: OrderRequest) {
+  const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY || '' });
+  
   const eventDisplay = request.eventType === 'Custom' ? request.customEventName : request.eventType;
 
   const prompt = `
@@ -137,9 +123,9 @@ export async function generateOrder(request: OrderRequest) {
     Please provide the order summary for this ${eventDisplay} event, strictly following the special instructions if any.
   `;
 
-  const response = await callGeminiProxy({
+  const response = await ai.models.generateContent({
     model: "gemini-3-flash-preview",
-    contents: [{ role: 'user', parts: [{ text: prompt }] }],
+    contents: prompt,
     config: {
       systemInstruction: SYSTEM_INSTRUCTION,
       temperature: 0.7,
